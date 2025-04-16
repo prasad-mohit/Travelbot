@@ -81,8 +81,8 @@ async def search_hotels(city_code, check_in, check_out, token):
         'cityCode': city_code,
         'radius': 5,
         'radiusUnit': 'KM',
-        'includeClosed': 'false',
-        'bestRateOnly': 'true'    
+        'includeClosed': False,
+        'bestRateOnly': True    
     }
     
     headers = {
