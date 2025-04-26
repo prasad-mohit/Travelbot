@@ -24,64 +24,102 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS with improved flight cards
 st.markdown("""
 <style>
-    .assistant-message {
-        background-color: #e0f7fa;
-        padding: 15px;
-        border-radius: 10px;
+    .assistant-message { 
+        background-color: #e0f7fa; 
+        padding: 15px; 
+        border-radius: 10px; 
         margin: 10px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .user-message {
-        background-color: #f1f8e9;
-        padding: 15px;
-        border-radius: 10px;
+    .user-message { 
+        background-color: #f1f8e9; 
+        padding: 15px; 
+        border-radius: 10px; 
         margin: 10px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .flight-card {
         border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 15px;
-        background-color: #ffffff;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
-    .flight-card:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    .flight-card.selected {
+        border: 2px solid #4CAF50;
+        background-color: #f8fff8;
     }
-    .travel-guide-card {
-        border-left: 4px solid #4a8cff;
-        padding: 15px;
-        margin: 15px 0;
-        background-color: #f8f9fa;
+    .flight-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
     }
-    .hotel-card {
-        border-left: 4px solid #ff7043;
-        padding: 15px;
-        margin: 15px 0;
-        background-color: #fff3e0;
+    .flight-title {
+        font-weight: 600;
+        font-size: 18px;
+        color: #2c3e50;
     }
-    .price-tag {
-        background-color: #4a8cff;
+    .flight-price {
+        font-weight: bold;
+        font-size: 20px;
+        color: #27ae60;
+    }
+    .flight-details {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+    .detail-row {
+        display: flex;
+    }
+    .detail-label {
+        font-weight: 600;
+        min-width: 140px;
+        color: #7f8c8d;
+    }
+    .detail-value {
+        color: #2c3e50;
+    }
+    .fee-badge {
+        background-color: #e74c3c;
         color: white;
-        padding: 3px 8px;
+        padding: 2px 8px;
         border-radius: 12px;
-        font-size: 14px;
-        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
     }
-    .section-title {
+    .baggage-badge {
+        background-color: #3498db;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .policy-badge {
+        background-color: #2ecc71;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .section-header {
         color: #2a56d6;
-        margin-top: 25px;
-        margin-bottom: 15px;
-        padding-bottom: 5px;
-        border-bottom: 2px solid #e0e0e0;
-    }
-    .download-btn {
         margin-top: 20px;
-        margin-bottom: 30px;
+        margin-bottom: 10px;
+    }
+    .info-card {
+        border-left: 4px solid #4a8cff;
+        padding: 12px;
+        margin: 10px 0;
+        background-color: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -101,6 +139,8 @@ if 'hotels_info' not in st.session_state:
     st.session_state.hotels_info = ""
 if 'destination_name' not in st.session_state:
     st.session_state.destination_name = ""
+if 'selected_flight' not in st.session_state:
+    st.session_state.selected_flight = None
 
 # Airport code mapping
 AIRPORT_CODES = {
@@ -168,6 +208,10 @@ def process_flights(data):
             hours, remainder = divmod(duration.seconds, 3600)
             minutes = remainder // 60
             
+            # Generate baggage info (mock since Amadeus doesn't always provide this)
+            baggage_checkin = "20kg" if offer['price']['grandTotal'] > 300 else "15kg"
+            baggage_cabin = "7kg" if offer['travelClass'] == "ECONOMY" else "10kg"
+            
             flights.append({
                 "Airline": segments[0]['carrierCode'],
                 "From": segments[0]['departure']['iataCode'],
@@ -175,10 +219,16 @@ def process_flights(data):
                 "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
                 "Arrival": arr.strftime("%a, %d %b %Y %H:%M"),
                 "Duration": f"{hours}h {minutes}m",
-                "Price (USD)": float(offer['price']['grandTotal']),
+                "Base Price (USD)": float(offer['price']['grandTotal']),
                 "Stops": len(segments) - 1,
                 "Aircraft": segments[0]['aircraft']['code'],
-                "Flight Number": f"{segments[0]['carrierCode']}{segments[0]['number']}"
+                "Flight Number": f"{segments[0]['carrierCode']}{segments[0]['number']}",
+                "Baggage Check-in": baggage_checkin,
+                "Baggage Cabin": baggage_cabin,
+                "Cancellation Policy": "Free within 24 hours" if offer['price']['grandTotal'] > 400 else "Non-refundable",
+                "Refund Policy": "Full refund" if offer['price']['grandTotal'] > 400 else "Credit only",
+                "SSL Fee": 25,
+                "Total Price (USD)": float(offer['price']['grandTotal']) + 25
             })
         except Exception as e:
             st.warning(f"Skipping flight due to processing error: {str(e)}")
@@ -287,7 +337,7 @@ if st.session_state.form_data and not st.session_state.search_complete:
         - Location/neighborhood
         - Key amenities
         - Guest rating
-        Format as markdown with bullet points."""
+        Format as markdown with headings."""
         st.session_state.hotels_info = generate_travel_content(hotels_prompt)
         
         st.session_state.search_complete = True
@@ -299,9 +349,8 @@ if st.session_state.form_data and not st.session_state.search_complete:
 
 # Display results
 if st.session_state.search_complete:
-    # Trip Summary Section
     st.markdown("---")
-    st.markdown("<h2 class='section-title'>📋 Your Trip Summary</h2>", unsafe_allow_html=True)
+    st.subheader("📋 Your Trip Summary")
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -313,25 +362,73 @@ if st.session_state.search_complete:
     with col4:
         st.metric("Class", st.session_state.form_data['flight_class'].capitalize())
 
-    # Flight Options Section
     st.markdown("---")
-    st.markdown("<h2 class='section-title'>✈️ Flight Options</h2>", unsafe_allow_html=True)
+    st.subheader("✈️ Flight Options")
     
     if not st.session_state.search_results:
         st.warning("No flights found for your criteria. Try adjusting your search.")
     else:
-        for flight in st.session_state.search_results:
+        for i, flight in enumerate(st.session_state.search_results):
+            selected_class = "selected" if st.session_state.selected_flight == i else ""
             with st.container():
                 st.markdown(f"""
-                <div class='flight-card'>
-                    <b>{flight['From']} → {flight['To']}</b><br>
-                    🛫 <b>Depart:</b> {flight['Departure']}<br>
-                    🛬 <b>Arrive:</b> {flight['Arrival']}<br>
-                    ⏱️ <b>Duration:</b> {flight['Duration']}<br>
-                    ✈️ <b>Flight:</b> {flight['Airline']} {flight['Flight Number']} | 🛑 {flight['Stops']} stop(s)<br>
-                    <span class='price-tag'>${flight['Price (USD)']:.2f} USD</span>
+                <div class='flight-card {selected_class}'>
+                    <div class='flight-header'>
+                        <div class='flight-title'>{flight['From']} → {flight['To']}</div>
+                        <div class='flight-price'>${flight['Total Price (USD)']:.2f}</div>
+                    </div>
+                    <div class='flight-details'>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Departure:</span>
+                            <span class='detail-value'>{flight['Departure']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Arrival:</span>
+                            <span class='detail-value'>{flight['Arrival']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Duration:</span>
+                            <span class='detail-value'>{flight['Duration']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Flight Number:</span>
+                            <span class='detail-value'>{flight['Airline']} {flight['Flight Number']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Baggage:</span>
+                            <span class='detail-value'>
+                                <span class='baggage-badge'>Check-in: {flight['Baggage Check-in']}</span>
+                                <span class='baggage-badge'>Cabin: {flight['Baggage Cabin']}</span>
+                            </span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Policies:</span>
+                            <span class='detail-value'>
+                                <span class='policy-badge'>{flight['Cancellation Policy']}</span>
+                                <span class='policy-badge'>{flight['Refund Policy']}</span>
+                            </span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Stops:</span>
+                            <span class='detail-value'>{flight['Stops']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Aircraft:</span>
+                            <span class='detail-value'>{flight['Aircraft']}</span>
+                        </div>
+                        <div class='detail-row'>
+                            <span class='detail-label'>Fees:</span>
+                            <span class='detail-value'>
+                                <span class='fee-badge'>SSL: ${flight['SSL Fee']}</span>
+                            </span>
+                        </div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
+                
+                if st.button(f"Select Flight #{i+1}", key=f"select_{i}"):
+                    st.session_state.selected_flight = i
+                    st.rerun()
         
         # Download button
         excel_data = download_excel(st.session_state.search_results)
@@ -339,39 +436,20 @@ if st.session_state.search_complete:
             label="📥 Download Flight Details (Excel)",
             data=excel_data,
             file_name=f"flights_{st.session_state.form_data['origin']}_to_{st.session_state.form_data['destination']}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_flights",
-            help="Download all flight options as an Excel spreadsheet",
-            use_container_width=True,
-            type="primary",
-            on_click=None,
-            args=None,
-            kwargs=None
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # Travel Guide Section
     st.markdown("---")
-    st.markdown("<h2 class='section-title'>🌟 Travel Guide</h2>", unsafe_allow_html=True)
-    with st.container():
-        st.markdown(f"""
-        <div class='travel-guide-card'>
-            {st.session_state.travel_guide}
-        </div>
-        """, unsafe_allow_html=True)
+    st.subheader("🌟 Travel Guide")
+    st.markdown(st.session_state.travel_guide)
 
-    # Hotel Recommendations Section
     st.markdown("---")
-    st.markdown("<h2 class='section-title'>🏨 Recommended Hotels</h2>", unsafe_allow_html=True)
-    with st.container():
-        st.markdown(f"""
-        <div class='hotel-card'>
-            {st.session_state.hotels_info}
-        </div>
-        """, unsafe_allow_html=True)
+    st.subheader("🏨 Recommended Hotels")
+    st.markdown(st.session_state.hotels_info)
 
-    # Follow-up Conversation Section
+    # Follow-up conversation
     st.markdown("---")
-    st.markdown("<h2 class='section-title'>💬 Need more information?</h2>", unsafe_allow_html=True)
+    st.subheader("💬 Need more information?")
     followup = st.chat_input(f"Ask me anything about {st.session_state.destination_name}...")
     
     if followup:
