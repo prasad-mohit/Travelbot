@@ -16,7 +16,7 @@ model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit app configuration
 st.set_page_config(
-    page_title="AI Travel Assistant",
+    page_title="Sakman AI Travel Assistant - Lets Go ...",
     page_icon="✈️",
     layout="wide"
 )
