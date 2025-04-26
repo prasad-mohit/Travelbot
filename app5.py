@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import google.generativeai as genai
@@ -13,21 +12,68 @@ AMADEUS_API_KEY = "5YWlF018OsxWXu9kMAHRIfBEATNd4irF"
 AMADEUS_API_SECRET = "YS1jZZ088P6h5xLk"
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
+# Configure Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit Page Config
-st.set_page_config(page_title="Sakman AI Travel Assistant", page_icon="✈️", layout="wide")
+st.set_page_config(
+    page_title="Sakman AI Travel Assistant", 
+    page_icon="✈️", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# Custom CSS
 st.markdown("""
 <style>
-    .assistant-message { background-color: #e0f7fa; padding: 10px; border-radius: 10px; margin: 10px 0; }
-    .user-message { background-color: #f1f8e9; padding: 10px; border-radius: 10px; margin: 10px 0; }
-    .flight-card { border: 1px solid #ccc; padding: 15px; border-radius: 10px; margin-bottom: 10px; background-color: #ffffff; }
+    .assistant-message { 
+        background-color: #e0f7fa; 
+        padding: 15px; 
+        border-radius: 10px; 
+        margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .user-message { 
+        background-color: #f1f8e9; 
+        padding: 15px; 
+        border-radius: 10px; 
+        margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .flight-card { 
+        border: 1px solid #e0e0e0; 
+        padding: 15px; 
+        border-radius: 10px; 
+        margin-bottom: 15px; 
+        background-color: #ffffff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    }
+    .flight-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .info-card {
+        border-left: 4px solid #4a8cff;
+        padding: 12px;
+        margin: 10px 0;
+        background-color: #f8f9fa;
+    }
+    .section-header {
+        color: #2a56d6;
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+    .price-tag {
+        background-color: #4a8cff;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 14px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session
+# Initialize session state
 if 'conversation' not in st.session_state:
     st.session_state.conversation = []
 if 'form_data' not in st.session_state:
@@ -40,16 +86,36 @@ if 'travel_guide' not in st.session_state:
     st.session_state.travel_guide = ""
 if 'hotels_info' not in st.session_state:
     st.session_state.hotels_info = ""
+if 'destination_name' not in st.session_state:
+    st.session_state.destination_name = ""
 
-# Functions
+# Airport code mapping
+AIRPORT_CODES = {
+    "DEL": "Delhi", "BOM": "Mumbai", "DOH": "Doha",
+    "LHR": "London", "DXB": "Dubai", "JFK": "New York",
+    "SIN": "Singapore", "BKK": "Bangkok", "MCT": "Muscat"
+}
+
+# Helper Functions
 def get_amadeus_token():
     url = "https://test.api.amadeus.com/v1/security/oauth2/token"
-    data = {'grant_type': 'client_credentials', 'client_id': AMADEUS_API_KEY, 'client_secret': AMADEUS_API_SECRET}
-    r = requests.post(url, data=data)
-    return r.json()['access_token']
+    data = {
+        'grant_type': 'client_credentials',
+        'client_id': AMADEUS_API_KEY,
+        'client_secret': AMADEUS_API_SECRET
+    }
+    try:
+        r = requests.post(url, data=data)
+        return r.json()['access_token']
+    except Exception as e:
+        st.error(f"Failed to get Amadeus token: {str(e)}")
+        return None
 
 def search_flights(form_data):
     token = get_amadeus_token()
+    if not token:
+        return None
+    
     headers = {'Authorization': f'Bearer {token}'}
     params = {
         "originLocationCode": form_data["origin"],
@@ -60,24 +126,51 @@ def search_flights(form_data):
         "currencyCode": "USD",
         "max": 5
     }
-    r = requests.get("https://test.api.amadeus.com/v2/shopping/flight-offers", headers=headers, params=params)
-    return r.json()
+    
+    if form_data.get("return_date"):
+        params["returnDate"] = form_data["return_date"]
+    
+    try:
+        r = requests.get(
+            "https://test.api.amadeus.com/v2/shopping/flight-offers", 
+            headers=headers, 
+            params=params
+        )
+        return r.json()
+    except Exception as e:
+        st.error(f"Flight search failed: {str(e)}")
+        return None
 
 def process_flights(data):
     flights = []
-    if 'data' not in data:
+    if not data or 'data' not in data:
         return flights
+    
     for offer in data['data']:
-        segments = offer['itineraries'][0]['segments']
-        dep = parser.parse(segments[0]['departure']['at'])
-        arr = parser.parse(segments[-1]['arrival']['at'])
-        flights.append({
-            "From": segments[0]['departure']['iataCode'],
-            "To": segments[-1]['arrival']['iataCode'],
-            "Departure": dep.strftime("%Y-%m-%d %H:%M"),
-            "Arrival": arr.strftime("%Y-%m-%d %H:%M"),
-            "Price (USD)": offer['price']['grandTotal']
-        })
+        try:
+            segments = offer['itineraries'][0]['segments']
+            dep = parser.parse(segments[0]['departure']['at'])
+            arr = parser.parse(segments[-1]['arrival']['at'])
+            duration = arr - dep
+            hours, remainder = divmod(duration.seconds, 3600)
+            minutes = remainder // 60
+            
+            flights.append({
+                "Airline": segments[0]['carrierCode'],
+                "From": segments[0]['departure']['iataCode'],
+                "To": segments[-1]['arrival']['iataCode'],
+                "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
+                "Arrival": arr.strftime("%a, %d %b %Y %H:%M"),
+                "Duration": f"{hours}h {minutes}m",
+                "Price (USD)": float(offer['price']['grandTotal']),
+                "Stops": len(segments) - 1,
+                "Aircraft": segments[0]['aircraft']['code'],
+                "Flight Number": f"{segments[0]['carrierCode']}{segments[0]['number']}"
+            })
+        except Exception as e:
+            st.warning(f"Skipping flight due to processing error: {str(e)}")
+            continue
+    
     return flights
 
 def download_excel(data):
@@ -88,72 +181,167 @@ def download_excel(data):
     output.seek(0)
     return output
 
-def fetch_travel_guide(dest):
-    prompt = f"Suggest top 5 things to do in {dest} as a friendly list."
-    response = model.generate_content(prompt)
-    return response.text.strip()
+def generate_travel_content(prompt):
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        st.error(f"Error generating content: {str(e)}")
+        return "Content not available at the moment."
 
-def fetch_hotels(dest):
-    prompt = f"Suggest top 5 hotels in {dest} with approximate price range."
-    response = model.generate_content(prompt)
-    return response.text.strip()
+def extract_travel_details(user_input):
+    prompt = f"""Extract travel details from this request: "{user_input}"
+    Return JSON with:
+    - origin (IATA code)
+    - destination (IATA code)
+    - departure_date (YYYY-MM-DD)
+    - return_date (YYYY-MM-DD or empty)
+    - travelers (number)
+    - flight_class (ECONOMY/PREMIUM_ECONOMY/BUSINESS/FIRST)
+    
+    Example:
+    {{
+        "origin": "DEL",
+        "destination": "DOH",
+        "departure_date": "2024-05-15",
+        "return_date": "",
+        "travelers": 2,
+        "flight_class": "ECONOMY"
+    }}"""
+    
+    try:
+        response = model.generate_content(prompt)
+        clean_json = response.text.strip().strip('```json').strip('```').strip()
+        return json.loads(clean_json)
+    except Exception as e:
+        st.error(f"Couldn't understand your request. Please try being more specific.")
+        return None
 
-# App starts
+# Main App
 st.title("✈️ Sakman AI Travel Assistant")
+st.markdown("Your personal travel planning companion powered by AI")
 
-# Show conversation
+# Display conversation
 for chat in st.session_state.conversation:
     with st.container():
-        st.markdown(f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['content']}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['content']}</div>", 
+            unsafe_allow_html=True
+        )
 
-# Chat input
-user_input = st.chat_input("Tell me your trip plan! (e.g., I want to fly from Delhi to Doha on May 5th)")
+# User input
+user_input = st.chat_input("Tell me about your trip (e.g., 'I want to fly from Delhi to Doha on May 15th for 2 people')")
 
 if user_input:
     st.session_state.conversation.append({"role": "user", "content": user_input})
-    st.session_state.form_data = {
-        "origin": "DEL",
-        "destination": "DOH",
-        "departure_date": (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d"),
-        "return_date": "",
-        "travelers": 1,
-        "flight_class": "ECONOMY"
-    }
+    
+    # Extract travel details
+    details = extract_travel_details(user_input)
+    if details:
+        st.session_state.form_data = details
+        st.session_state.destination_name = AIRPORT_CODES.get(details["destination"], details["destination"])
+        
+        # Add confirmation message
+        confirmation = f"Great! I'll find flights from {AIRPORT_CODES.get(details['origin'], details['origin'])} "
+        confirmation += f"to {st.session_state.destination_name} on {details['departure_date']}"
+        if details.get('return_date'):
+            confirmation += f", returning {details['return_date']}"
+        confirmation += f" for {details['travelers']} traveler(s) in {details['flight_class'].capitalize()} class."
+        
+        st.session_state.conversation.append({"role": "assistant", "content": confirmation})
     st.rerun()
 
-# Once form_data is filled
+# Process flight search when form_data is ready
 if st.session_state.form_data and not st.session_state.search_complete:
-    with st.spinner("Searching for flights..."):
-        raw = search_flights(st.session_state.form_data)
-        st.session_state.search_results = process_flights(raw)
-        st.session_state.travel_guide = fetch_travel_guide(st.session_state.form_data["destination"])
-        st.session_state.hotels_info = fetch_hotels(st.session_state.form_data["destination"])
+    with st.spinner("🔍 Searching for flights and travel information..."):
+        # Get flights
+        raw_flights = search_flights(st.session_state.form_data)
+        st.session_state.search_results = process_flights(raw_flights)
+        
+        # Get travel guide
+        travel_prompt = f"""Create a comprehensive travel guide for {st.session_state.destination_name} including:
+        - Top 5 attractions with descriptions
+        - Local cuisine recommendations
+        - Cultural tips
+        - Best times to visit each attraction
+        Format as markdown with headings."""
+        st.session_state.travel_guide = generate_travel_content(travel_prompt)
+        
+        # Get hotel recommendations
+        hotels_prompt = f"""List 5 recommended hotels in {st.session_state.destination_name} with:
+        - Property name
+        - Price range (USD)
+        - Location/neighborhood
+        - Key amenities
+        - Guest rating
+        Format as markdown with headings."""
+        st.session_state.hotels_info = generate_travel_content(hotels_prompt)
+        
         st.session_state.search_complete = True
-        st.session_state.conversation.append({"role": "assistant", "content": f"Here are some amazing flight options from {st.session_state.form_data['origin']} to {st.session_state.form_data['destination']}! ✈️"})
+        st.session_state.conversation.append({
+            "role": "assistant", 
+            "content": f"Here are your travel options for {st.session_state.destination_name}! ✈️"
+        })
     st.rerun()
 
+# Display results
 if st.session_state.search_complete:
+    st.markdown("---")
     st.subheader("📋 Your Trip Summary")
-    st.success(f"🛫 {st.session_state.form_data['origin']} → {st.session_state.form_data['destination']} | 📅 Departure: {st.session_state.form_data['departure_date']} | 👤 Travelers: {st.session_state.form_data['travelers']} | 🎟️ Class: {st.session_state.form_data['flight_class'].capitalize()}")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("From", AIRPORT_CODES.get(st.session_state.form_data['origin'], st.session_state.form_data['origin']))
+    with col2:
+        st.metric("To", st.session_state.destination_name)
+    with col3:
+        st.metric("Departure", st.session_state.form_data['departure_date'])
+    with col4:
+        st.metric("Class", st.session_state.form_data['flight_class'].capitalize())
 
+    st.markdown("---")
     st.subheader("✈️ Flight Options")
-    for flight in st.session_state.search_results:
-        with st.container():
-            st.markdown(f"<div class='flight-card'><b>{flight['From']} ➔ {flight['To']}</b><br>Departure: {flight['Departure']} | Arrival: {flight['Arrival']}<br>💲Price: {flight['Price (USD)']} USD</div>", unsafe_allow_html=True)
+    
+    if not st.session_state.search_results:
+        st.warning("No flights found for your criteria. Try adjusting your search.")
+    else:
+        for flight in st.session_state.search_results:
+            with st.container():
+                st.markdown(f"""
+                <div class='flight-card'>
+                    <b>{flight['From']} → {flight['To']}</b><br>
+                    🛫 {flight['Departure']} | 🛬 {flight['Arrival']}<br>
+                    ⏱️ {flight['Duration']} | ✈️ {flight['Airline']} {flight['Flight Number']}<br>
+                    <span class='price-tag'>${flight['Price (USD)']:.2f} USD</span> | 
+                    🛑 {flight['Stops']} stop(s) | ✈️ {flight['Aircraft']}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Download button
+        excel_data = download_excel(st.session_state.search_results)
+        st.download_button(
+            label="📥 Download Flight Details (Excel)",
+            data=excel_data,
+            file_name=f"flights_{st.session_state.form_data['origin']}_to_{st.session_state.form_data['destination']}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
-    excel = download_excel(st.session_state.search_results)
-    st.download_button("📥 Download Flights Excel", excel, "flights.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
+    st.markdown("---")
     st.subheader("🌟 Travel Guide")
     st.markdown(st.session_state.travel_guide)
 
-    st.subheader("🏨 Top Hotels")
+    st.markdown("---")
+    st.subheader("🏨 Recommended Hotels")
     st.markdown(st.session_state.hotels_info)
 
-    # Allow more natural conversation
-    followup = st.chat_input("Ask me more about your destination! (e.g., best beaches in Doha)")
+    # Follow-up conversation
+    st.markdown("---")
+    st.subheader("💬 Need more information?")
+    followup = st.chat_input(f"Ask me anything about {st.session_state.destination_name}...")
+    
     if followup:
-        ai_response = model.generate_content(followup)
         st.session_state.conversation.append({"role": "user", "content": followup})
-        st.session_state.conversation.append({"role": "assistant", "content": ai_response.text.strip()})
+        with st.spinner("Thinking..."):
+            response = model.generate_content(f"About {st.session_state.destination_name}: {followup}")
+            st.session_state.conversation.append({"role": "assistant", "content": response.text})
         st.rerun()
