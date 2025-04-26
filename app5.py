@@ -12,7 +12,7 @@ GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")  # Add your Gemini API key to 
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit app configuration
 st.set_page_config(
