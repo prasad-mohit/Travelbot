@@ -27,41 +27,42 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
 <style>
-    .assistant-message { 
-        background-color: #e0f7fa; 
-        padding: 15px; 
-        border-radius: 10px; 
+    .assistant-message {
+        background-color: #e0f7fa;
+        padding: 15px;
+        border-radius: 10px;
         margin: 10px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .user-message { 
-        background-color: #f1f8e9; 
-        padding: 15px; 
-        border-radius: 10px; 
+    .user-message {
+        background-color: #f1f8e9;
+        padding: 15px;
+        border-radius: 10px;
         margin: 10px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .flight-card { 
-        border: 1px solid #e0e0e0; 
-        padding: 15px; 
-        border-radius: 10px; 
-        margin-bottom: 15px; 
+    .flight-card {
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 15px;
         background-color: #ffffff;
         box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     }
     .flight-card:hover {
         box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
-    .info-card {
+    .travel-guide-card {
         border-left: 4px solid #4a8cff;
-        padding: 12px;
-        margin: 10px 0;
+        padding: 15px;
+        margin: 15px 0;
         background-color: #f8f9fa;
     }
-    .section-header {
-        color: #2a56d6;
-        margin-top: 20px;
-        margin-bottom: 10px;
+    .hotel-card {
+        border-left: 4px solid #ff7043;
+        padding: 15px;
+        margin: 15px 0;
+        background-color: #fff3e0;
     }
     .price-tag {
         background-color: #4a8cff;
@@ -69,6 +70,18 @@ st.markdown("""
         padding: 3px 8px;
         border-radius: 12px;
         font-size: 14px;
+        display: inline-block;
+    }
+    .section-title {
+        color: #2a56d6;
+        margin-top: 25px;
+        margin-bottom: 15px;
+        padding-bottom: 5px;
+        border-bottom: 2px solid #e0e0e0;
+    }
+    .download-btn {
+        margin-top: 20px;
+        margin-bottom: 30px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -274,7 +287,7 @@ if st.session_state.form_data and not st.session_state.search_complete:
         - Location/neighborhood
         - Key amenities
         - Guest rating
-        Format as markdown with headings."""
+        Format as markdown with bullet points."""
         st.session_state.hotels_info = generate_travel_content(hotels_prompt)
         
         st.session_state.search_complete = True
@@ -286,8 +299,9 @@ if st.session_state.form_data and not st.session_state.search_complete:
 
 # Display results
 if st.session_state.search_complete:
+    # Trip Summary Section
     st.markdown("---")
-    st.subheader("📋 Your Trip Summary")
+    st.markdown("<h2 class='section-title'>📋 Your Trip Summary</h2>", unsafe_allow_html=True)
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -299,8 +313,9 @@ if st.session_state.search_complete:
     with col4:
         st.metric("Class", st.session_state.form_data['flight_class'].capitalize())
 
+    # Flight Options Section
     st.markdown("---")
-    st.subheader("✈️ Flight Options")
+    st.markdown("<h2 class='section-title'>✈️ Flight Options</h2>", unsafe_allow_html=True)
     
     if not st.session_state.search_results:
         st.warning("No flights found for your criteria. Try adjusting your search.")
@@ -310,10 +325,11 @@ if st.session_state.search_complete:
                 st.markdown(f"""
                 <div class='flight-card'>
                     <b>{flight['From']} → {flight['To']}</b><br>
-                    🛫 {flight['Departure']} | 🛬 {flight['Arrival']}<br>
-                    ⏱️ {flight['Duration']} | ✈️ {flight['Airline']} {flight['Flight Number']}<br>
-                    <span class='price-tag'>${flight['Price (USD)']:.2f} USD</span> | 
-                    🛑 {flight['Stops']} stop(s) | ✈️ {flight['Aircraft']}
+                    🛫 <b>Depart:</b> {flight['Departure']}<br>
+                    🛬 <b>Arrive:</b> {flight['Arrival']}<br>
+                    ⏱️ <b>Duration:</b> {flight['Duration']}<br>
+                    ✈️ <b>Flight:</b> {flight['Airline']} {flight['Flight Number']} | 🛑 {flight['Stops']} stop(s)<br>
+                    <span class='price-tag'>${flight['Price (USD)']:.2f} USD</span>
                 </div>
                 """, unsafe_allow_html=True)
         
@@ -323,20 +339,39 @@ if st.session_state.search_complete:
             label="📥 Download Flight Details (Excel)",
             data=excel_data,
             file_name=f"flights_{st.session_state.form_data['origin']}_to_{st.session_state.form_data['destination']}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_flights",
+            help="Download all flight options as an Excel spreadsheet",
+            use_container_width=True,
+            type="primary",
+            on_click=None,
+            args=None,
+            kwargs=None
         )
 
+    # Travel Guide Section
     st.markdown("---")
-    st.subheader("🌟 Travel Guide")
-    st.markdown(st.session_state.travel_guide)
+    st.markdown("<h2 class='section-title'>🌟 Travel Guide</h2>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown(f"""
+        <div class='travel-guide-card'>
+            {st.session_state.travel_guide}
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Hotel Recommendations Section
     st.markdown("---")
-    st.subheader("🏨 Recommended Hotels")
-    st.markdown(st.session_state.hotels_info)
+    st.markdown("<h2 class='section-title'>🏨 Recommended Hotels</h2>", unsafe_allow_html=True)
+    with st.container():
+        st.markdown(f"""
+        <div class='hotel-card'>
+            {st.session_state.hotels_info}
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Follow-up conversation
+    # Follow-up Conversation Section
     st.markdown("---")
-    st.subheader("💬 Need more information?")
+    st.markdown("<h2 class='section-title'>💬 Need more information?</h2>", unsafe_allow_html=True)
     followup = st.chat_input(f"Ask me anything about {st.session_state.destination_name}...")
     
     if followup:
