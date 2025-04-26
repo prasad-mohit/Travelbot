@@ -6,3 +6,5 @@ dateparser
 python-dotenv
 amadeus
 pandas
+openpyxl
+requests
