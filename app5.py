@@ -16,7 +16,7 @@ model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit app configuration
 st.set_page_config(
-    page_title="AI Travel Assistant",
+    page_title="Sakman Sakman AI Travel Assistant",
     page_icon="✈️",
     layout="wide"
 )
@@ -358,7 +358,7 @@ def display_flight_results(flights):
             st.markdown("</div>", unsafe_allow_html=True)
 
 # Main app
-st.title("✈️ AI Travel Assistant")
+st.title("✈️ Sakman Sakman AI Travel Assistant")
 st.markdown("<div class='header'>Tell me about your trip and I'll find the best flights</div>", unsafe_allow_html=True)
 
 # Display conversation
@@ -448,7 +448,7 @@ if st.session_state.debug_info:
 
 # Add some information about the app
 st.markdown("""
-### How to Use This AI Travel Assistant
+### How to Use This Sakman Sakman AI Travel Assistant
 1. Tell me about your trip in natural language (examples below)
 2. I'll extract the details and confirm with you
 3. I'll search for flights and show you the best options
