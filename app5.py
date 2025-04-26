@@ -16,7 +16,7 @@ model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit app configuration
 st.set_page_config(
-    page_title="Sakman AI Travel Assistant - Lets Go ...",
+    page_title="AI Travel Assistant",
     page_icon="✈️",
     layout="wide"
 )
@@ -62,6 +62,14 @@ st.markdown("""
         border-radius: 10px;
         margin: 8px 0;
     }
+    .debug-info {
+        background-color: #fff4f4;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 5px 0;
+        font-family: monospace;
+        font-size: 12px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,6 +103,8 @@ if 'form_data' not in st.session_state:
     }
 if 'search_results' not in st.session_state:
     st.session_state.search_results = None
+if 'debug_info' not in st.session_state:
+    st.session_state.debug_info = []
 
 # Function to get Amadeus access token
 def get_amadeus_token():
@@ -154,7 +164,7 @@ def search_flights(form_data):
         return None
 
 # Function to process flight data
-def process_flight_data(flight_data):
+def process_flight_data(flight_data, form_data):
     processed_flights = []
     
     if not flight_data or 'data' not in flight_data:
@@ -203,7 +213,7 @@ def process_flight_data(flight_data):
             if 'nonRefundable' in offer and offer['nonRefundable']:
                 cancellation = "Non-refundable"
             
-            # Get travel class
+            # Get travel class from form_data
             travel_class = form_data["flight_class"].capitalize()
             
             processed_flight = {
@@ -223,7 +233,8 @@ def process_flight_data(flight_data):
             }
             processed_flights.append(processed_flight)
         except Exception as e:
-            st.warning(f"Skipping a flight due to processing error: {str(e)}")
+            error_msg = f"Skipping flight due to processing error: {str(e)}"
+            st.session_state.debug_info.append(error_msg)
             continue
     
     return processed_flights
@@ -254,7 +265,16 @@ def extract_travel_details(user_input):
     Return ONLY the JSON object, no additional text or explanation."""
     
     try:
+        # Debug: Log the prompt being sent
+        debug_msg = f"[DEBUG] Sending prompt to Gemini:\n{prompt}"
+        st.session_state.debug_info.append(debug_msg)
+        
         response = model.generate_content(prompt)
+        
+        # Debug: Log the raw response
+        debug_msg = f"[DEBUG] Raw Gemini response:\n{response.text}"
+        st.session_state.debug_info.append(debug_msg)
+        
         # Clean the response to extract just the JSON
         response_text = response.text.strip()
         if response_text.startswith('```json'):
@@ -262,9 +282,36 @@ def extract_travel_details(user_input):
         elif response_text.startswith('```'):
             response_text = response_text[3:-3].strip()
         
-        return json.loads(response_text)
+        # Debug: Log cleaned response
+        debug_msg = f"[DEBUG] Cleaned response text:\n{response_text}"
+        st.session_state.debug_info.append(debug_msg)
+        
+        extracted_data = json.loads(response_text)
+        
+        # Debug: Log extracted data
+        debug_msg = f"[DEBUG] Extracted JSON data:\n{json.dumps(extracted_data, indent=2)}"
+        st.session_state.debug_info.append(debug_msg)
+        
+        # Validate required fields
+        required_fields = ['origin', 'destination', 'departure_date']
+        missing_fields = [field for field in required_fields if field not in extracted_data or not extracted_data[field]]
+        
+        if missing_fields:
+            debug_msg = f"[DEBUG] Missing required fields: {missing_fields}"
+            st.session_state.debug_info.append(debug_msg)
+            st.error(f"Couldn't extract these required details: {', '.join(missing_fields)}. Please provide more specific information.")
+            return None
+        
+        return extracted_data
+    except json.JSONDecodeError as e:
+        debug_msg = f"[DEBUG] JSON decode error: {str(e)}\nResponse text: {response_text if 'response_text' in locals() else 'N/A'}"
+        st.session_state.debug_info.append(debug_msg)
+        st.error(f"Sorry, I couldn't understand your travel request. Please try being more specific.")
+        return None
     except Exception as e:
-        st.error(f"Error extracting travel details: {str(e)}")
+        debug_msg = f"[DEBUG] Error extracting travel details: {str(e)}"
+        st.session_state.debug_info.append(debug_msg)
+        st.error(f"Error processing your request: {str(e)}")
         return None
 
 # Function to display flight results
@@ -369,7 +416,7 @@ if (len(st.session_state.conversation) >= 2 and
     with st.spinner("Searching for flights..."):
         flight_data = search_flights(st.session_state.form_data)
         if flight_data:
-            processed_flights = process_flight_data(flight_data)
+            processed_flights = process_flight_data(flight_data, st.session_state.form_data)
             st.session_state.search_results = processed_flights
             st.rerun()
 
@@ -392,6 +439,12 @@ if st.session_state.search_results:
     # Display results
     display_flight_results(st.session_state.search_results)
     st.rerun()
+
+# Debug information section
+if st.session_state.debug_info:
+    with st.expander("Debug Information"):
+        for info in st.session_state.debug_info[-5:]:  # Show last 5 debug messages
+            st.markdown(f"<div class='debug-info'>{info}</div>", unsafe_allow_html=True)
 
 # Add some information about the app
 st.markdown("""
