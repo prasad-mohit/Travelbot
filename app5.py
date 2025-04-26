@@ -8,7 +8,7 @@ import json
 # Configure API keys
 AMADEUS_API_KEY = "5YWlF018OsxWXu9kMAHRIfBEATNd4irF"
 AMADEUS_API_SECRET = "YS1jZZ088P6h5xLk"
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")  # Add your Gemini API key to Streamlit secrets
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -16,7 +16,7 @@ model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit app configuration
 st.set_page_config(
-    page_title="Sakman Sakman AI Travel Assistant",
+    page_title="Sakman AI Travel Assistant",
     page_icon="✈️",
     layout="wide"
 )
@@ -105,6 +105,8 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = None
 if 'debug_info' not in st.session_state:
     st.session_state.debug_info = []
+if 'search_complete' not in st.session_state:
+    st.session_state.search_complete = False
 
 # Function to get Amadeus access token
 def get_amadeus_token():
@@ -213,9 +215,6 @@ def process_flight_data(flight_data, form_data):
             if 'nonRefundable' in offer and offer['nonRefundable']:
                 cancellation = "Non-refundable"
             
-            # Get travel class from form_data
-            travel_class = form_data["flight_class"].capitalize()
-            
             processed_flight = {
                 "Airline": airline_code,
                 "Airline Logo": airline_logo,
@@ -226,7 +225,7 @@ def process_flight_data(flight_data, form_data):
                 "Arrival": arrival_time.strftime("%a, %d-%b-%y %H:%M:%S"),
                 "Baggage": baggage_allowance,
                 "Flexibility": flexibility,
-                "Class": travel_class,
+                "Class": form_data["flight_class"].capitalize(),
                 "Price (OMR)": price,
                 "Cancellation Policy": cancellation,
                 "raw_data": offer
@@ -265,52 +264,25 @@ def extract_travel_details(user_input):
     Return ONLY the JSON object, no additional text or explanation."""
     
     try:
-        # Debug: Log the prompt being sent
-        debug_msg = f"[DEBUG] Sending prompt to Gemini:\n{prompt}"
-        st.session_state.debug_info.append(debug_msg)
-        
         response = model.generate_content(prompt)
-        
-        # Debug: Log the raw response
-        debug_msg = f"[DEBUG] Raw Gemini response:\n{response.text}"
-        st.session_state.debug_info.append(debug_msg)
-        
-        # Clean the response to extract just the JSON
         response_text = response.text.strip()
         if response_text.startswith('```json'):
             response_text = response_text[7:-3].strip()
         elif response_text.startswith('```'):
             response_text = response_text[3:-3].strip()
         
-        # Debug: Log cleaned response
-        debug_msg = f"[DEBUG] Cleaned response text:\n{response_text}"
-        st.session_state.debug_info.append(debug_msg)
-        
         extracted_data = json.loads(response_text)
-        
-        # Debug: Log extracted data
-        debug_msg = f"[DEBUG] Extracted JSON data:\n{json.dumps(extracted_data, indent=2)}"
-        st.session_state.debug_info.append(debug_msg)
         
         # Validate required fields
         required_fields = ['origin', 'destination', 'departure_date']
         missing_fields = [field for field in required_fields if field not in extracted_data or not extracted_data[field]]
         
         if missing_fields:
-            debug_msg = f"[DEBUG] Missing required fields: {missing_fields}"
-            st.session_state.debug_info.append(debug_msg)
             st.error(f"Couldn't extract these required details: {', '.join(missing_fields)}. Please provide more specific information.")
             return None
         
         return extracted_data
-    except json.JSONDecodeError as e:
-        debug_msg = f"[DEBUG] JSON decode error: {str(e)}\nResponse text: {response_text if 'response_text' in locals() else 'N/A'}"
-        st.session_state.debug_info.append(debug_msg)
-        st.error(f"Sorry, I couldn't understand your travel request. Please try being more specific.")
-        return None
     except Exception as e:
-        debug_msg = f"[DEBUG] Error extracting travel details: {str(e)}"
-        st.session_state.debug_info.append(debug_msg)
         st.error(f"Error processing your request: {str(e)}")
         return None
 
@@ -341,7 +313,6 @@ def display_flight_results(flights):
                 st.write(f"**Arrival:** {flight['Arrival']}")
                 st.write(f"**Duration:** {flight['Duration']}")
                 
-                # Flight details expander
                 with st.expander("View Fare Details"):
                     details_col1, details_col2 = st.columns(2)
                     with details_col1:
@@ -358,7 +329,7 @@ def display_flight_results(flights):
             st.markdown("</div>", unsafe_allow_html=True)
 
 # Main app
-st.title("✈️ Sakman Sakman AI Travel Assistant")
+st.title("✈️ Sakman AI Travel Assistant")
 st.markdown("<div class='header'>Tell me about your trip and I'll find the best flights</div>", unsafe_allow_html=True)
 
 # Display conversation
@@ -372,6 +343,10 @@ for msg in st.session_state.conversation:
 user_input = st.chat_input("Where would you like to travel? (e.g., 'I want to fly from Delhi to Doha on May 15th for 2 people in business class')")
 
 if user_input:
+    # Reset search state for new query
+    st.session_state.search_results = None
+    st.session_state.search_complete = False
+    
     # Add user message to conversation
     st.session_state.conversation.append({"role": "user", "content": user_input})
     st.rerun()
@@ -407,48 +382,49 @@ if st.session_state.conversation and st.session_state.conversation[-1]["role"] =
             st.session_state.conversation.append({"role": "assistant", "content": response})
             st.rerun()
 
-# Perform flight search when assistant has responded but no results yet
-if (len(st.session_state.conversation) >= 2 and 
+# Perform flight search when needed
+if (not st.session_state.search_complete and 
+    st.session_state.conversation and 
     st.session_state.conversation[-1]["role"] == "assistant" and 
-    "Searching for flights" in st.session_state.conversation[-1]["content"] and 
-    not st.session_state.search_results):
+    "Searching for flights" in st.session_state.conversation[-1]["content"]):
     
     with st.spinner("Searching for flights..."):
         flight_data = search_flights(st.session_state.form_data)
+        
         if flight_data:
             processed_flights = process_flight_data(flight_data, st.session_state.form_data)
-            st.session_state.search_results = processed_flights
-            st.rerun()
+            
+            if processed_flights:
+                st.session_state.search_results = processed_flights
+                st.session_state.search_complete = True
+                
+                # Remove the searching message
+                st.session_state.conversation.pop()
+                
+                # Add results message
+                origin_name = AIRPORT_CODES.get(st.session_state.form_data["origin"], st.session_state.form_data["origin"])
+                dest_name = AIRPORT_CODES.get(st.session_state.form_data["destination"], st.session_state.form_data["destination"])
+                confirmation = f"Here are flight options from {origin_name} to {dest_name} on {st.session_state.form_data['departure_date']}"
+                if st.session_state.form_data.get('return_date'):
+                    confirmation += f", returning {st.session_state.form_data['return_date']}"
+                confirmation += f" for {st.session_state.form_data['travelers']} traveler(s) in {st.session_state.form_data['flight_class'].capitalize()} class:"
+                
+                st.session_state.conversation.append({"role": "assistant", "content": confirmation})
+                st.rerun()
 
 # Display flight results when available
-if st.session_state.search_results:
-    # Clear the "Searching for flights" message
-    if "Searching for flights" in st.session_state.conversation[-1]["content"]:
-        st.session_state.conversation.pop()
-    
-    # Add confirmation message
-    origin_name = AIRPORT_CODES.get(st.session_state.form_data["origin"], st.session_state.form_data["origin"])
-    dest_name = AIRPORT_CODES.get(st.session_state.form_data["destination"], st.session_state.form_data["destination"])
-    confirmation = f"Here are flight options from {origin_name} to {dest_name} on {st.session_state.form_data['departure_date']}"
-    if st.session_state.form_data.get('return_date'):
-        confirmation += f", returning {st.session_state.form_data['return_date']}"
-    confirmation += f" for {st.session_state.form_data['travelers']} traveler(s) in {st.session_state.form_data['flight_class'].capitalize()} class:"
-    
-    st.session_state.conversation.append({"role": "assistant", "content": confirmation})
-    
-    # Display results
+if st.session_state.search_complete and st.session_state.search_results:
     display_flight_results(st.session_state.search_results)
-    st.rerun()
 
 # Debug information section
 if st.session_state.debug_info:
     with st.expander("Debug Information"):
-        for info in st.session_state.debug_info[-5:]:  # Show last 5 debug messages
+        for info in st.session_state.debug_info[-5:]:
             st.markdown(f"<div class='debug-info'>{info}</div>", unsafe_allow_html=True)
 
-# Add some information about the app
+# Instructions
 st.markdown("""
-### How to Use This Sakman Sakman AI Travel Assistant
+### How to Use This Sakman AI Travel Assistant
 1. Tell me about your trip in natural language (examples below)
 2. I'll extract the details and confirm with you
 3. I'll search for flights and show you the best options
