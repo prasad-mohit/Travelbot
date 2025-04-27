@@ -6,15 +6,24 @@ import pandas as pd
 import io
 import json
 from dateutil import parser
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 # API Configuration
 AMADEUS_API_KEY = "5YWlF018OsxWXu9kMAHRIfBEATNd4irF"
 AMADEUS_API_SECRET = "YS1jZZ088P6h5xLk"
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
+EMAIL_SENDER = "sakmantravels@gmail.com"  # Replace with your email
+EMAIL_PASSWORD = "Sakman@321"  # Store in Streamlit secrets
 
 # Configure Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+
+# Currency Conversion
+USD_TO_OMR = 0.385  # 1 USD = 0.385 OMR (approximate rate)
 
 # Streamlit Page Config
 st.set_page_config(
@@ -24,18 +33,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS with improved flight cards
+# Custom CSS with improved styling
 st.markdown("""
 <style>
     .assistant-message { 
-        background-color: #e0f7fa; 
+        background-color: #e6f3ff; 
         padding: 15px; 
         border-radius: 10px; 
         margin: 10px 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .user-message { 
-        background-color: #f1f8e9; 
+        background-color: #f0fff4; 
         padding: 15px; 
         border-radius: 10px; 
         margin: 10px 0;
@@ -43,15 +52,19 @@ st.markdown("""
     }
     .flight-card {
         border: 1px solid #e0e0e0;
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 20px;
         margin-bottom: 20px;
-        background: white;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        background: #ffffff;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: transform 0.2s;
+    }
+    .flight-card:hover {
+        transform: translateY(-5px);
     }
     .flight-card.selected {
-        border: 2px solid #4CAF50;
-        background-color: #f8fff8;
+        border: 2px solid #2a56d6;
+        background-color: #f8faff;
     }
     .flight-header {
         display: flex;
@@ -60,66 +73,84 @@ st.markdown("""
         margin-bottom: 12px;
     }
     .flight-title {
-        font-weight: 600;
-        font-size: 18px;
-        color: #2c3e50;
+        font-weight: 700;
+        font-size: 20px;
+        color: #1a3c5e;
     }
     .flight-price {
         font-weight: bold;
-        font-size: 20px;
-        color: #27ae60;
+        font-size: 22px;
+        color: #2a56d6;
     }
     .flight-details {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-bottom: 10px;
+        gap: 15px;
+        margin-bottom: 15px;
     }
     .detail-row {
         display: flex;
+        align-items: center;
     }
     .detail-label {
         font-weight: 600;
         min-width: 140px;
-        color: #7f8c8d;
+        color: #6b7280;
     }
     .detail-value {
-        color: #2c3e50;
+        color: #1f2937;
+        font-size: 14px;
     }
     .fee-badge {
-        background-color: #e74c3c;
+        background-color: #dc2626;
         color: white;
-        padding: 2px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
         font-size: 12px;
         font-weight: 600;
     }
     .baggage-badge {
-        background-color: #3498db;
+        background-color: #2563eb;
         color: white;
-        padding: 2px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
         font-size: 12px;
         font-weight: 600;
     }
     .policy-badge {
-        background-color: #2ecc71;
+        background-color: #16a34a;
         color: white;
-        padding: 2px 8px;
+        padding: 4px 10px;
         border-radius: 12px;
         font-size: 12px;
         font-weight: 600;
     }
     .section-header {
-        color: #2a56d6;
-        margin-top: 20px;
-        margin-bottom: 10px;
+        color: #1e40af;
+        margin-top: 25px;
+        margin-bottom: 15px;
+        font-size: 24px;
+        font-weight: 700;
     }
     .info-card {
-        border-left: 4px solid #4a8cff;
-        padding: 12px;
-        margin: 10px 0;
-        background-color: #f8f9fa;
+        border-left: 4px solid #2563eb;
+        padding: 15px;
+        margin: 15px 0;
+        background-color: #f9fafb;
+        border-radius: 8px;
+    }
+    .stChatInput {
+        background-color: #ffffff !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 8px !important;
+        padding: 10px !important;
+    }
+    .stChatInput > div > input {
+        color: #1f2937 !important;
+        background-color: #ffffff !important;
+    }
+    .stChatInput > div > input::placeholder {
+        color: #9ca3af !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -176,7 +207,7 @@ def search_flights(form_data):
         "departureDate": form_data["departure_date"],
         "adults": form_data["travelers"],
         "travelClass": form_data["flight_class"],
-        "currencyCode": "USD",
+        "currencyCode": "USD",  # API returns USD, we'll convert to OMR
         "max": 5
     }
     
@@ -194,6 +225,9 @@ def search_flights(form_data):
         st.error(f"Flight search failed: {str(e)}")
         return None
 
+def convert_to_omr(price_usd):
+    return round(float(price_usd) * USD_TO_OMR, 2)
+
 def process_flights(data):
     flights = []
     if not data or 'data' not in data:
@@ -210,12 +244,16 @@ def process_flights(data):
             
             # Safely get the grand total price
             try:
-                base_price = float(offer['price']['grandTotal'])
+                base_price_usd = float(offer['price']['grandTotal'])
             except (KeyError, TypeError, ValueError):
-                base_price = 0.0
+                base_price_usd = 0.0
+            
+            base_price_omr = convert_to_omr(base_price_usd)
+            ssl_fee_usd = 25
+            ssl_fee_omr = convert_to_omr(ssl_fee_usd)
             
             # Generate baggage info based on price and class
-            baggage_checkin = "20kg" if base_price > 300 else "15kg"
+            baggage_checkin = "20kg" if base_price_usd > 300 else "15kg"
             baggage_cabin = "7kg" if offer.get('travelClass', "ECONOMY") == "ECONOMY" else "10kg"
             
             flights.append({
@@ -225,16 +263,16 @@ def process_flights(data):
                 "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
                 "Arrival": arr.strftime("%a, %d %b %Y %H:%M"),
                 "Duration": f"{hours}h {minutes}m",
-                "Base Price (USD)": base_price,
+                "Base Price (OMR)": base_price_omr,
                 "Stops": len(segments) - 1,
                 "Aircraft": segments[0].get('aircraft', {}).get('code', 'Unknown'),
                 "Flight Number": f"{segments[0].get('carrierCode', '')}{segments[0].get('number', '')}",
                 "Baggage Check-in": baggage_checkin,
                 "Baggage Cabin": baggage_cabin,
-                "Cancellation Policy": "Free within 24 hours" if base_price > 400 else "Non-refundable",
-                "Refund Policy": "Full refund" if base_price > 400 else "Credit only",
-                "SSL Fee": 25,
-                "Total Price (USD)": base_price + 25
+                "Cancellation Policy": "Free within 24 hours" if base_price_usd > 400 else "Non-refundable",
+                "Refund Policy": "Full refund" if base_price_usd > 400 else "Credit only",
+                "SSL Fee (OMR)": ssl_fee_omr,
+                "Total Price (OMR)": base_price_omr + ssl_fee_omr
             })
         except Exception as e:
             st.warning(f"Skipping flight due to processing error: {str(e)}")
@@ -250,10 +288,71 @@ def download_excel(data):
     output.seek(0)
     return output
 
+def send_flight_email(recipient_email, flight_data, origin, destination):
+    try:
+        # Create email
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = recipient_email
+        msg['Subject'] = f"Flight Options from {origin} to {destination}"
+        
+        # Email body
+        body = "Dear Traveler,\n\nHere are your requested flight options:\n\n"
+        for i, flight in enumerate(flight_data, 1):
+            body += f"Flight Option #{i}:\n"
+            body += f"From: {flight['From']} To: {flight['To']}\n"
+            body += f"Departure: {flight['Departure']}\n"
+            body += f"Arrival: {flight['Arrival']}\n"
+            body += f"Duration: {flight['Duration']}\n"
+            body += f"Total Price: {flight['Total Price (OMR)']:.2f} OMR\n"
+            body += f"Flight Number: {flight['Flight Number']}\n"
+            body += f"Baggage: Check-in {flight['Baggage Check-in']}, Cabin {flight['Baggage Cabin']}\n"
+            body += f"Cancellation: {flight['Cancellation Policy']}\n\n"
+        
+        body += "Thank you for using Sakman AI Travel Assistant!\n"
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach Excel file
+        excel_data = download_excel(flight_data)
+        excel_part = MIMEApplication(excel_data.getvalue(), Name=f"flights_{origin}_to_{destination}.xlsx")
+        excel_part['Content-Disposition'] = f'attachment; filename="flights_{origin}_to_{destination}.xlsx"'
+        msg.attach(excel_part)
+        
+        # Send email
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.send_message(msg)
+        
+        return True
+    except Exception as e:
+        st.error(f"Failed to send email: {str(e)}")
+        return False
+
 def generate_travel_content(prompt):
     try:
         response = model.generate_content(prompt)
-        return response.text.strip()
+        text = response.text.strip()
+        # Convert USD to OMR in hotel recommendations
+        if "USD" in text:
+            lines = text.split('\n')
+            for i, line in enumerate(lines):
+                if 'USD' in line:
+                    try:
+                        # Extract price range (e.g., $100-$200)
+                        price_part = line.split('Price range:')[1].split('USD')[0].strip()
+                        if '-' in price_part:
+                            low, high = map(float, price_part.replace('$', '').split('-'))
+                            low_omr = convert_to_omr(low)
+                            high_omr = convert_to_omr(high)
+                            lines[i] = line.replace(f"${low}-${high} USD", f"{low_omr:.2f}-{high_omr:.2f} OMR")
+                        else:
+                            price = float(price_part.replace('$', ''))
+                            price_omr = convert_to_omr(price)
+                            lines[i] = line.replace(f"${price} USD", f"{price_omr:.2f} OMR")
+                    except:
+                        continue
+            text = '\n'.join(lines)
+        return text
     except Exception as e:
         st.error(f"Error generating content: {str(e)}")
         return "Content not available at the moment."
@@ -381,7 +480,7 @@ if st.session_state.search_complete:
                 <div class='flight-card {selected_class}'>
                     <div class='flight-header'>
                         <div class='flight-title'>{flight['From']} → {flight['To']}</div>
-                        <div class='flight-price'>${flight['Total Price (USD)']:.2f}</div>
+                        <div class='flight-price'>{flight['Total Price (OMR)']:.2f} OMR</div>
                     </div>
                     <div class='flight-details'>
                         <div class='detail-row'>
@@ -425,7 +524,7 @@ if st.session_state.search_complete:
                         <div class='detail-row'>
                             <span class='detail-label'>Fees:</span>
                             <span class='detail-value'>
-                                <span class='fee-badge'>SSL: ${flight['SSL Fee']}</span>
+                                <span class='fee-badge'>SSL: {flight['SSL Fee (OMR)']:.2f} OMR</span>
                             </span>
                         </div>
                     </div>
@@ -436,14 +535,29 @@ if st.session_state.search_complete:
                     st.session_state.selected_flight = i
                     st.rerun()
         
-        # Download button
-        excel_data = download_excel(st.session_state.search_results)
-        st.download_button(
-            label="📥 Download Flight Details (Excel)",
-            data=excel_data,
-            file_name=f"flights_{st.session_state.form_data['origin']}_to_{st.session_state.form_data['destination']}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        # Download and Email buttons
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            excel_data = download_excel(st.session_state.search_results)
+            st.download_button(
+                label="📥 Download Flight Details (Excel)",
+                data=excel_data,
+                file_name=f"flights_{st.session_state.form_data['origin']}_to_{st.session_state.form_data['destination']}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        with col2:
+            email_input = st.text_input("Email Flight Details", placeholder="Enter your email", key="email_input")
+            if st.button("📧 Send to Email") and email_input:
+                with st.spinner("Sending email..."):
+                    success = send_flight_email(
+                        email_input,
+                        st.session_state.search_results,
+                        st.session_state.form_data['origin'],
+                        st.session_state.form_data['destination']
+                    )
+                    if success:
+                        st.success("Flight details sent to your email!")
+                    st.rerun()
 
     st.markdown("---")
     st.subheader("🌟 Travel Guide")
