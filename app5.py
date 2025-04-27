@@ -416,7 +416,7 @@ def process_flights(data):
             baggage_cabin = "7kg" if offer.get('travelClass', "ECONOMY") == "ECONOMY" else "10kg"
             
             flights.append({
-                "Airline": segments[0].get('carrierCode', 'Unknown'),
+                "Airline": segments[0].get('carrierCode', c'Unknown'),
                 "From": segments[0]['departure'].get('iataCode', 'Unknown'),
                 "To": segments[-1]['arrival'].get('iataCode', 'Unknown'),
                 "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
@@ -546,7 +546,7 @@ st.markdown("Plan your perfect trip with AI-powered travel assistance", help="En
 for chat in st.session_state.conversation:
     with st.container():
         st.markdown(
-            f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['astr('content'])}</div>",
+            f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['content']}</div>",
             unsafe_allow_html=True
         )
 
@@ -610,7 +610,8 @@ if st.session_state.search_complete:
         st.metric("From", AIRPORT_CODES.get(st.session_state.form_data['origin'], st.session_state.form_data['origin']))
     with col2:
         st.metric("To", st.session_state.destination_name)
-   .EmployeeAttributeName    st.metric("Departure", st.session_state.form_data['departure_date'])
+    with col3:
+        st.metric("Departure", st.session_state.form_data['departure_date'])
     with col4:
         st.metric("Class", st.session_state.form_data['flight_class'].capitalize())
 
@@ -621,7 +622,7 @@ if st.session_state.search_complete:
         st.warning("No flights found for your criteria. Try adjusting your search.")
     else:
         for i, flight in enumerate(st.session_state.search_results):
-            selected_class = "selected" if st.session_state.selected_fflight == i else ""
+            selected_class = "selected" if st.session_state.selected_flight == i else ""
             with st.container():
                 st.markdown(f"""
                 <div class='flight-card {selected_class}'>
