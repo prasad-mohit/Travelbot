@@ -150,7 +150,14 @@ def get_theme_css():
                 color: #e5e7eb;
                 border-radius: 8px;
             }
-            .error-box {
+            .status-box-success {
+                background-color: #15803d;
+                color: #f3f4f6;
+                padding: 10px;
+                border-radius: 8px;
+                margin-top: 10px;
+            }
+            .status-box-error {
                 background-color: #7f1d1d;
                 color: #f3f4f6;
                 padding: 10px;
@@ -187,6 +194,7 @@ def get_theme_css():
             .main { background-color: #f9fafb; color: #1f2937; }
             .assistant-message {
                 background-color: #e6f3ff;
+                color: #1f2937;
                 padding: 15px;
                 border-radius: 10px;
                 margin: 10px 0;
@@ -194,6 +202,7 @@ def get_theme_css():
             }
             .user-message {
                 background-color: #f0fff4;
+                color: #1f2937;
                 padding: 15px;
                 border-radius: 10px;
                 margin: 10px 0;
@@ -288,7 +297,14 @@ def get_theme_css():
                 background-color: #f9fafb;
                 border-radius: 8px;
             }
-            .error-box {
+            .status-box-success {
+                background-color: #dcfce7;
+                color: #15803d;
+                padding: 10px;
+                border-radius: 8px;
+                margin-top: 10px;
+            }
+            .status-box-error {
                 background-color: #fee2e2;
                 color: #b91c1c;
                 padding: 10px;
@@ -347,6 +363,8 @@ if 'destination_name' not in st.session_state:
     st.session_state.destination_name = ""
 if 'selected_flight' not in st.session_state:
     st.session_state.selected_flight = None
+if 'email_status' not in st.session_state:
+    st.session_state.email_status = None
 
 # Airport code mapping
 AIRPORT_CODES = {
@@ -492,7 +510,7 @@ def send_flight_email(recipient_email, flight_data, origin, destination):
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
         
-        return True, None
+        return True, f"Email sent successfully to {recipient_email}"
     except smtplib.SMTPAuthenticationError as e:
         return False, f"Authentication failed: Please ensure a valid Gmail App Password is set in Streamlit secrets. Error: {str(e)}"
     except Exception as e:
@@ -556,14 +574,6 @@ def extract_travel_details(user_input):
 # Main App
 st.title("✈️ Sakman AI Travel Assistant")
 st.markdown("Plan your perfect trip with AI-powered travel assistance", help="Enter your travel details below to get started!")
-
-# Display conversation
-for chat in st.session_state.conversation:
-    with st.container():
-        st.markdown(
-            f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['content']}</div>",
-            unsafe_allow_html=True
-        )
 
 # User input
 user_input = st.chat_input("Tell me about your trip (e.g., 'I want to fly from Delhi to Doha on May 15th for 2 people')")
@@ -722,22 +732,30 @@ if st.session_state.search_complete:
                 if st.button("📧 Send Flight Details", help="Send flight details to your email"):
                     if email_input:
                         with st.spinner("Sending email..."):
-                            success, error_msg = send_flight_email(
+                            success, status_msg = send_flight_email(
                                 email_input,
                                 st.session_state.search_results,
                                 st.session_state.form_data['origin'],
                                 st.session_state.form_data['destination']
                             )
-                            if success:
-                                st.success(f"Email sent successfully to {email_input}")
-                            else:
-                                st.markdown(
-                                    f"<div class='error-box'>Email Error: {error_msg}</div>",
-                                    unsafe_allow_html=True
-                                )
+                            st.session_state.email_status = {
+                                "success": success,
+                                "message": status_msg
+                            }
                     else:
-                        st.error("Please enter a valid email address.")
+                        st.session_state.email_status = {
+                            "success": False,
+                            "message": "Please enter a valid email address."
+                        }
                     st.rerun()
+                
+                # Display email status
+                if st.session_state.email_status:
+                    status_class = "status-box-success" if st.session_state.email_status["success"] else "status-box-error"
+                    st.markdown(
+                        f"<div class='{status_class}'>{st.session_state.email_status['message']}</div>",
+                        unsafe_allow_html=True
+                    )
 
     st.markdown("---")
     st.subheader("🌟 Travel Guide")
@@ -750,6 +768,16 @@ if st.session_state.search_complete:
     # Follow-up conversation
     st.markdown("---")
     st.subheader("💬 Need more information?")
+    
+    # Display conversation at the end
+    for chat in st.session_state.conversation:
+        with st.container():
+            st.markdown(
+                f"<div class='{chat['role']}-message'><b>{chat['role'].capitalize()}:</b> {chat['content']}</div>",
+                unsafe_allow_html=True
+            )
+    
+    # Follow-up input
     followup = st.chat_input(f"Ask me anything about {st.session_state.destination_name}...")
 
     if followup:
