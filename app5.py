@@ -16,7 +16,7 @@ AMADEUS_API_KEY = "5YWlF018OsxWXu9kMAHRIfBEATNd4irF"
 AMADEUS_API_SECRET = "YS1jZZ088P6h5xLk"
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 EMAIL_SENDER = "sakmantravels@gmail.com"
-EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD")  # Store in Streamlit secrets
+EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD")  # Use App Password in Streamlit secrets
 
 # Configure Gemini AI
 genai.configure(api_key=GEMINI_API_KEY)
@@ -150,18 +150,25 @@ def get_theme_css():
                 color: #e5e7eb;
                 border-radius: 8px;
             }
+            .error-box {
+                background-color: #7f1d1d;
+                color: #f3f4f6;
+                padding: 10px;
+                border-radius: 8px;
+                margin-top: 10px;
+            }
             .stChatInput {
-                background-color: #ffffff !important;
+                background-color: #374151 !important;
                 border: 1px solid #6b7280 !important;
                 border-radius: 8px !important;
                 padding: 10px !important;
             }
             .stChatInput > div > input {
-                color: #1f2937 !important;
-                background-color: #ffffff !important;
+                color: #e5e7eb !important;
+                background-color: #374151 !important;
             }
             .stChatInput > div > input::placeholder {
-                color: #6b7280 !important;
+                color: #9ca3af !important;
             }
             .stButton > button {
                 background-color: #3b82f6;
@@ -280,6 +287,13 @@ def get_theme_css():
                 margin: 15px 0;
                 background-color: #f9fafb;
                 border-radius: 8px;
+            }
+            .error-box {
+                background-color: #fee2e2;
+                color: #b91c1c;
+                padding: 10px;
+                border-radius: 8px;
+                margin-top: 10px;
             }
             .stChatInput {
                 background-color: #ffffff !important;
@@ -478,10 +492,11 @@ def send_flight_email(recipient_email, flight_data, origin, destination):
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
         
-        return True
+        return True, None
+    except smtplib.SMTPAuthenticationError as e:
+        return False, f"Authentication failed: Please ensure a valid Gmail App Password is set in Streamlit secrets. Error: {str(e)}"
     except Exception as e:
-        st.error(f"Failed to send email: {str(e)}")
-        return False
+        return False, f"Failed to send email: {str(e)}"
 
 def generate_travel_content(prompt):
     try:
@@ -535,7 +550,7 @@ def extract_travel_details(user_input):
         clean_json = response.text.strip().strip('```json').strip('```').strip()
         return json.loads(clean_json)
     except Exception as e:
-        st.error(f"Couldn't understand your request. Please try being more specific.")
+        st.error(f"Couldn't understand your request: {str(e)}. Please try being more specific.")
         return None
 
 # Main App
@@ -707,14 +722,19 @@ if st.session_state.search_complete:
                 if st.button("📧 Send Flight Details", help="Send flight details to your email"):
                     if email_input:
                         with st.spinner("Sending email..."):
-                            success = send_flight_email(
+                            success, error_msg = send_flight_email(
                                 email_input,
                                 st.session_state.search_results,
                                 st.session_state.form_data['origin'],
                                 st.session_state.form_data['destination']
                             )
                             if success:
-                                st.success("Flight details sent to your email!")
+                                st.success(f"Email sent successfully to {email_input}")
+                            else:
+                                st.markdown(
+                                    f"<div class='error-box'>Email Error: {error_msg}</div>",
+                                    unsafe_allow_html=True
+                                )
                     else:
                         st.error("Please enter a valid email address.")
                     st.rerun()
@@ -731,10 +751,22 @@ if st.session_state.search_complete:
     st.markdown("---")
     st.subheader("💬 Need more information?")
     followup = st.chat_input(f"Ask me anything about {st.session_state.destination_name}...")
-    
+
     if followup:
         st.session_state.conversation.append({"role": "user", "content": followup})
         with st.spinner("Thinking..."):
-            response = model.generate_content(f"About {st.session_state.destination_name}: {followup}")
-            st.session_state.conversation.append({"role": "assistant", "content": response.text})
+            try:
+                response = model.generate_content(f"About {st.session_state.destination_name}: {followup}")
+                if response and response.text:
+                    st.session_state.conversation.append({"role": "assistant", "content": response.text.strip()})
+                else:
+                    st.session_state.conversation.append({
+                        "role": "assistant",
+                        "content": "Sorry, I couldn't generate a response. Please try again."
+                    })
+            except Exception as e:
+                st.session_state.conversation.append({
+                    "role": "assistant",
+                    "content": f"Error generating response: {str(e)}. Please try again."
+                })
         st.rerun()
