@@ -18,7 +18,7 @@ model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
 
 # Streamlit Page Config
 st.set_page_config(
-    page_title="Sakman AI Travel Assistant", 
+    page_title="Sakman AI Travel Assistant Pro Max", 
     page_icon="✈️", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -208,27 +208,33 @@ def process_flights(data):
             hours, remainder = divmod(duration.seconds, 3600)
             minutes = remainder // 60
             
-            # Generate baggage info (mock since Amadeus doesn't always provide this)
-            baggage_checkin = "20kg" if offer['price']['grandTotal'] > 300 else "15kg"
-            baggage_cabin = "7kg" if offer['travelClass'] == "ECONOMY" else "10kg"
+            # Safely get the grand total price
+            try:
+                base_price = float(offer['price']['grandTotal'])
+            except (KeyError, TypeError, ValueError):
+                base_price = 0.0
+            
+            # Generate baggage info based on price and class
+            baggage_checkin = "20kg" if base_price > 300 else "15kg"
+            baggage_cabin = "7kg" if offer.get('travelClass', "ECONOMY") == "ECONOMY" else "10kg"
             
             flights.append({
-                "Airline": segments[0]['carrierCode'],
-                "From": segments[0]['departure']['iataCode'],
-                "To": segments[-1]['arrival']['iataCode'],
+                "Airline": segments[0].get('carrierCode', 'Unknown'),
+                "From": segments[0]['departure'].get('iataCode', 'Unknown'),
+                "To": segments[-1]['arrival'].get('iataCode', 'Unknown'),
                 "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
                 "Arrival": arr.strftime("%a, %d %b %Y %H:%M"),
                 "Duration": f"{hours}h {minutes}m",
-                "Base Price (USD)": float(offer['price']['grandTotal']),
+                "Base Price (USD)": base_price,
                 "Stops": len(segments) - 1,
-                "Aircraft": segments[0]['aircraft']['code'],
-                "Flight Number": f"{segments[0]['carrierCode']}{segments[0]['number']}",
+                "Aircraft": segments[0].get('aircraft', {}).get('code', 'Unknown'),
+                "Flight Number": f"{segments[0].get('carrierCode', '')}{segments[0].get('number', '')}",
                 "Baggage Check-in": baggage_checkin,
                 "Baggage Cabin": baggage_cabin,
-                "Cancellation Policy": "Free within 24 hours" if offer['price']['grandTotal'] > 400 else "Non-refundable",
-                "Refund Policy": "Full refund" if offer['price']['grandTotal'] > 400 else "Credit only",
+                "Cancellation Policy": "Free within 24 hours" if base_price > 400 else "Non-refundable",
+                "Refund Policy": "Full refund" if base_price > 400 else "Credit only",
                 "SSL Fee": 25,
-                "Total Price (USD)": float(offer['price']['grandTotal']) + 25
+                "Total Price (USD)": base_price + 25
             })
         except Exception as e:
             st.warning(f"Skipping flight due to processing error: {str(e)}")
