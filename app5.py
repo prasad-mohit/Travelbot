@@ -416,7 +416,7 @@ def process_flights(data):
             baggage_cabin = "7kg" if offer.get('travelClass', "ECONOMY") == "ECONOMY" else "10kg"
             
             flights.append({
-                "Airline": segments[0].get('carrierCode', c'Unknown'),
+                "Airline": segments[0].get('carrierCode', 'Unknown'),
                 "From": segments[0]['departure'].get('iataCode', 'Unknown'),
                 "To": segments[-1]['arrival'].get('iataCode', 'Unknown'),
                 "Departure": dep.strftime("%a, %d %b %Y %H:%M"),
