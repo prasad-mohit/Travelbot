@@ -8,3 +8,4 @@ amadeus
 pandas
 openpyxl
 requests
+smtplib
