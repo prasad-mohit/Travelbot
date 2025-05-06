@@ -12,8 +12,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 
 # API Configuration
-AMADEUS_API_KEY = "5YWlF018OsxWXu9kMAHRIfBEATNd4irF"
-AMADEUS_API_SECRET = "YS1jZZ088P6h5xLk"
+AMADEUS_API_KEY = "PCefRpagGnEYwyL64brCRbGm8LzaoXhL"
+AMADEUS_API_SECRET = "1MBZxdEBuaAeggzg"
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 EMAIL_SENDER = "sakmantravels@gmail.com"
 EMAIL_PASSWORD = st.secrets.get("EMAIL_PASSWORD")  # Use App Password in Streamlit secrets
